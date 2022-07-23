@@ -1,0 +1,27 @@
+#!/usr/bin/perl -s
+use strict;
+use warnings;
+
+our ($h);
+
+my ( $rhost, $rport ) = @ARGV;
+$rport //= 22;
+
+if ( $h || not defined $rhost || @ARGV > 2 ) {
+    die "Usage: $0 rhost [rport]\n";
+}
+
+# Command to create the tunnel...
+my @cmd = split ' ', "ssh -N -R 2222:localhost:22 $rhost -p$rport";
+
+# Kill command(s) if already executing...
+for (`ps aux | grep '@cmd' | grep -v grep`) {
+    chomp;
+    my $pid = (split)[1];
+    kill 'TERM'      => $pid
+      or kill 'KILL' => $pid;
+}
+
+# Replace current program with tunnel program...
+exec(@cmd)
+  or die "couldn't replace myself with '@cmd': $!\n";
