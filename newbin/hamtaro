@@ -1,0 +1,91 @@
+#!/bin/sh
+
+# Enable or disable debug mode
+DEBUG_MODE=0  # Set to 1 to enable debugging, 0 to disable
+
+# Initialize chat history
+CHAT_HISTORY=""
+
+# Debug function
+debug() {
+    if [ "$DEBUG_MODE" -eq 1 ]; then
+        echo "DEBUG: $1"
+    fi
+}
+
+# Function to send request to OpenAI API with spinner
+send_api_request() {
+    local data="$1"
+    local api_key="$2"
+    local temp_data_file=$(mktemp)
+
+    echo "$data" > "$temp_data_file"
+
+    # Use gum spin with --show-output for the spinner effect
+    local response=$(gum spin --show-output -s pulse -- curl -s -X POST "https://api.openai.com/v1/chat/completions" \
+                      -H "Content-Type: application/json" \
+                      -H "Authorization: Bearer $api_key" \
+                      -d @"$temp_data_file")
+
+    # Clean up the temporary file
+    rm "$temp_data_file"
+
+    echo "$response"
+}
+
+update_chat_history() {
+    local user_message="$1"
+    local bot_message="$2"
+
+    # Convert literal '\n' in bot_message to actual new lines
+    bot_message=$(echo "$bot_message" | sed 's/\\n/\n/g')
+
+    CHAT_HISTORY="$CHAT_HISTORY\nYou: $user_message\n\nAI: $bot_message"
+}
+
+while true; do
+    # Display chat history
+    echo "$CHAT_HISTORY\n"
+
+    # Get user input
+    QUESTION=$(gum input --placeholder "Ask a question")
+
+    # Check if the user wants to exit
+    if [ -z "$QUESTION" ] || [ "$QUESTION" = "exit" ]; then
+        debug "User requested exit."
+        break
+    fi
+
+    debug "Received question: $QUESTION"
+
+    # Set your OpenAI API key
+    OPENAI_API_KEY="put your openai apikey here"  # Replace with your actual API key
+
+    # Prepare the data for the API request
+    DATA=$(jq -n \
+              --arg content "$QUESTION" \
+              '{
+                "model": "gpt-3.5-turbo",
+                "messages": [
+                  {"role": "user", "content": $content}
+                ],
+                "temperature": 0.7
+              }')
+
+    debug "Prepared data for API request: $DATA"
+
+    # Send the request and get the response
+    RESPONSE=$(send_api_request "$DATA" "$OPENAI_API_KEY")
+
+    # Debug raw response
+    debug "Raw API response: $RESPONSE"
+
+    # Sanitize and parse the response
+    SANITIZED_RESPONSE=$(echo $RESPONSE | tr -d '\r')
+    ANSWER=$(echo $SANITIZED_RESPONSE | jq -r '.choices[0].message.content')
+
+    debug "Extracted answer: $ANSWER"
+
+    # Update chat history with the processed answer
+    update_chat_history "$QUESTION" "$ANSWER"
+done
